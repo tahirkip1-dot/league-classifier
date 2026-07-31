@@ -1,1 +1,1 @@
-# predicts the enemy draft
+# predicts the unknown champions in a given draft.
