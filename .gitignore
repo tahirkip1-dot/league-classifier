@@ -1,3 +1,5 @@
 #block private api key
 .env
 .vscode
+.pyc
+__pycache__/
