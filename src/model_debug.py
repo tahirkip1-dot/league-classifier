@@ -95,19 +95,39 @@ class ModelDebugger:
                 warnings.append(f"{name}: gradient contains NaN or Inf")
         return warnings
 
-    def plot_losses(self) -> go.Figure:
-        """Create train/validation loss curves, including epoch 0."""
-        if not self.train_losses:
-            raise RuntimeError("No losses recorded; call record_initial_losses first")
+    def plot_losses(
+        self,
+        train_losses: Iterable[float] | None = None,
+        validation_losses: Iterable[float] | None = None,
+    ) -> go.Figure:
+        """Create loss curves from external histories or internally recorded losses."""
+        train_history = (
+            self.train_losses
+            if train_losses is None
+            else [float(loss) for loss in train_losses]
+        )
+        validation_history = (
+            self.validation_losses
+            if validation_losses is None
+            else [float(loss) for loss in validation_losses]
+        )
 
-        epochs = list(range(len(self.train_losses)))
+        if not train_history or not validation_history:
+            raise RuntimeError("Train and validation loss histories cannot be empty")
+        if len(train_history) != len(validation_history):
+            raise ValueError(
+                "Train and validation loss histories must contain the same number "
+                "of epochs"
+            )
+
+        epochs = list(range(len(train_history)))
         figure = go.Figure()
         figure.add_trace(go.Scatter(
-            x=epochs, y=self.train_losses, mode="lines+markers", name="Train loss"
+            x=epochs, y=train_history, mode="lines+markers", name="Train loss"
         ))
         figure.add_trace(go.Scatter(
             x=epochs,
-            y=self.validation_losses,
+            y=validation_history,
             mode="lines+markers",
             name="Validation loss",
         ))
@@ -219,10 +239,14 @@ class ModelDebugger:
         )
         return figure
 
-    def show_all(self) -> dict[str, go.Figure]:
+    def show_all(
+        self,
+        train_losses: Iterable[float] | None = None,
+        validation_losses: Iterable[float] | None = None,
+    ) -> dict[str, go.Figure]:
         """Display every diagnostic plot and return the figures by name."""
         figures = {
-            "losses": self.plot_losses(),
+            "losses": self.plot_losses(train_losses, validation_losses),
             "norms": self.plot_norms(),
             "distributions": self.plot_distributions(),
             "weight_heatmaps": self.plot_weight_heatmaps(),
@@ -231,12 +255,17 @@ class ModelDebugger:
             figure.show()
         return figures
 
-    def save_all(self, directory: str | Path = "debug_plots") -> None:
+    def save_all(
+        self,
+        directory: str | Path = "debug_plots",
+        train_losses: Iterable[float] | None = None,
+        validation_losses: Iterable[float] | None = None,
+    ) -> None:
         """Save every diagnostic as a standalone interactive HTML file."""
         output = Path(directory)
         output.mkdir(parents=True, exist_ok=True)
         figures = {
-            "losses": self.plot_losses(),
+            "losses": self.plot_losses(train_losses, validation_losses),
             "norms": self.plot_norms(),
             "distributions": self.plot_distributions(),
             "weight_heatmaps": self.plot_weight_heatmaps(),
