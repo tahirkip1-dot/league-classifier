@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from pathlib import Path
 from typing import Iterable
 
 import plotly.graph_objects as go
@@ -19,57 +18,11 @@ class ModelDebugger:
         self.steps: list[int] = []
         self.parameter_norms: dict[str, list[float]] = defaultdict(list)
         self.gradient_norms: dict[str, list[float]] = defaultdict(list)
-        self.train_losses: list[float] = []
-        self.validation_losses: list[float] = []
 
-    @staticmethod
-    def _device(model: torch.nn.Module) -> torch.device:
-        return next(model.parameters()).device
-
-    @staticmethod
-    def _evaluate(
-        model: torch.nn.Module,
-        loader: Iterable,
-        loss_fn: torch.nn.Module,
-    ) -> float:
-        """Return sample-weighted mean loss without changing model parameters."""
-        was_training = model.training
-        device = ModelDebugger._device(model)
-        total_loss = 0.0
-        total_examples = 0
-
-        model.eval()
-        with torch.no_grad():
-            for inputs, targets in loader:
-                inputs = inputs.to(device)
-                targets = targets.to(device)
-                batch_size = inputs.size(0)
-                total_loss += loss_fn(model(inputs), targets).item() * batch_size
-                total_examples += batch_size
-
-        model.train(was_training)
-        if total_examples == 0:
-            raise ValueError("Cannot evaluate loss with an empty data loader")
-        return total_loss / total_examples
-
-    def record_initial_losses(
-        self,
-        train_loader: Iterable,
-        validation_loader: Iterable,
-        loss_fn: torch.nn.Module,
-    ) -> tuple[float, float]:
-        """Evaluate and store epoch-0 losses before any training takes place."""
-        if self.train_losses or self.validation_losses:
-            raise RuntimeError("Initial losses have already been recorded")
-
-        train_loss = self._evaluate(self.model, train_loader, loss_fn)
-        validation_loss = self._evaluate(self.model, validation_loader, loss_fn)
-        self.train_losses.append(train_loss)
-        self.validation_losses.append(validation_loss)
-        return train_loss, validation_loss
-
-    def record_step(self, step: int) -> None:
-        """Record norms after loss.backward() and before optimizer.step()."""
+    def record_step(self, step: int | None = None) -> None:
+        """Record norms, automatically numbering snapshots when no step is supplied."""
+        if step is None:
+            step = 0 if not self.steps else self.steps[-1] + 1
         self.steps.append(int(step))
         for name, parameter in self.model.named_parameters():
             self.parameter_norms[name].append(parameter.detach().norm().item())
@@ -78,27 +31,14 @@ class ModelDebugger:
                 float("nan") if gradient is None else gradient.detach().norm().item()
             )
 
-    def record_epoch(self, train_loss: float, validation_loss: float) -> None:
-        """Record losses after a completed training epoch."""
-        self.train_losses.append(float(train_loss))
-        self.validation_losses.append(float(validation_loss))
-
     def plot_losses(
         self,
-        train_losses: Iterable[float] | None = None,
-        validation_losses: Iterable[float] | None = None,
+        train_losses: Iterable[float],
+        validation_losses: Iterable[float],
     ) -> go.Figure:
-        """Create loss curves from external histories or internally recorded losses."""
-        train_history = (
-            self.train_losses
-            if train_losses is None
-            else [float(loss) for loss in train_losses]
-        )
-        validation_history = (
-            self.validation_losses
-            if validation_losses is None
-            else [float(loss) for loss in validation_losses]
-        )
+        """Create loss curves from externally managed metric histories."""
+        train_history = [float(loss) for loss in train_losses]
+        validation_history = [float(loss) for loss in validation_losses]
 
         if not train_history or not validation_history:
             raise RuntimeError("Train and validation loss histories cannot be empty")
@@ -229,8 +169,8 @@ class ModelDebugger:
 
     def show_all(
         self,
-        train_losses: Iterable[float] | None = None,
-        validation_losses: Iterable[float] | None = None,
+        train_losses: Iterable[float],
+        validation_losses: Iterable[float],
     ) -> dict[str, go.Figure]:
         """Display every diagnostic plot and return the figures by name."""
         figures = {
@@ -242,21 +182,3 @@ class ModelDebugger:
         for figure in figures.values():
             figure.show()
         return figures
-
-    def save_all(
-        self,
-        directory: str | Path = "debug_plots",
-        train_losses: Iterable[float] | None = None,
-        validation_losses: Iterable[float] | None = None,
-    ) -> None:
-        """Save every diagnostic as a standalone interactive HTML file."""
-        output = Path(directory)
-        output.mkdir(parents=True, exist_ok=True)
-        figures = {
-            "losses": self.plot_losses(train_losses, validation_losses),
-            "norms": self.plot_norms(),
-            "distributions": self.plot_distributions(),
-            "weight_heatmaps": self.plot_weight_heatmaps(),
-        }
-        for name, figure in figures.items():
-            figure.write_html(output / f"{name}.html")
