@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -14,17 +14,8 @@ import torch
 class ModelDebugger:
     """Collect training diagnostics and show them as interactive Plotly figures."""
 
-    def __init__(
-        self,
-        model: torch.nn.Module,
-        embedding_labels: Sequence[str] | None = None,
-        embedding_layer: str = "token_embedding",
-    ):
+    def __init__(self, model: torch.nn.Module):
         self.model = model
-        self.embedding_labels = (
-            None if embedding_labels is None else list(embedding_labels)
-        )
-        self.embedding_layer = embedding_layer
         self.steps: list[int] = []
         self.parameter_norms: dict[str, list[float]] = defaultdict(list)
         self.gradient_norms: dict[str, list[float]] = defaultdict(list)
@@ -228,75 +219,6 @@ class ModelDebugger:
         )
         return figure
 
-    def plot_embedding_map(self, show_labels: bool = True) -> go.Figure:
-        """Project cosine-normalized embedding vectors into two dimensions with PCA."""
-        if self.embedding_labels is None:
-            raise RuntimeError(
-                "No embedding labels supplied; construct ModelDebugger with "
-                "embedding_labels=champ_names"
-            )
-
-        layer = getattr(self.model, self.embedding_layer, None)
-        if not isinstance(layer, torch.nn.Embedding):
-            raise ValueError(
-                f"model.{self.embedding_layer} is not a torch.nn.Embedding layer"
-            )
-
-        vectors = layer.weight.detach().float().cpu()
-        if len(self.embedding_labels) != vectors.size(0):
-            raise ValueError(
-                f"Received {len(self.embedding_labels)} labels for "
-                f"{vectors.size(0)} embedding vectors"
-            )
-        if vectors.size(0) < 2 or vectors.size(1) < 2:
-            raise ValueError("PCA requires at least two vectors with two dimensions")
-
-        # Unit-normalising means proximity primarily reflects cosine similarity,
-        # rather than differences in embedding magnitude.
-        vector_norms = vectors.norm(dim=1)
-        normalized = vectors / vector_norms.clamp_min(1e-12).unsqueeze(1)
-        centered = normalized - normalized.mean(dim=0, keepdim=True)
-        _, singular_values, components = torch.linalg.svd(centered, full_matrices=False)
-        coordinates = centered @ components[:2].T
-
-        variances = singular_values.square()
-        explained = variances[:2] / variances.sum().clamp_min(1e-12) * 100
-        x = coordinates[:, 0].tolist()
-        y = coordinates[:, 1].tolist()
-        norms = vector_norms.tolist()
-
-        figure = go.Figure(go.Scatter(
-            x=x,
-            y=y,
-            mode="markers+text" if show_labels else "markers",
-            text=self.embedding_labels if show_labels else None,
-            textposition="top center",
-            textfont={"size": 9},
-            customdata=[[name, norm] for name, norm in zip(self.embedding_labels, norms)],
-            hovertemplate=(
-                "<b>%{customdata[0]}</b><br>"
-                "PC1: %{x:.3f}<br>PC2: %{y:.3f}<br>"
-                "Embedding norm: %{customdata[1]:.3f}<extra></extra>"
-            ),
-            marker={
-                "size": 8,
-                "color": norms,
-                "colorscale": "Viridis",
-                "showscale": True,
-                "colorbar": {"title": "Vector norm"},
-                "line": {"width": 0.5, "color": "white"},
-            },
-        ))
-        figure.update_layout(
-            title="Champion embedding similarity (cosine-normalized PCA)",
-            xaxis_title=f"PC1 ({explained[0].item():.1f}% variance)",
-            yaxis_title=f"PC2 ({explained[1].item():.1f}% variance)",
-            template="plotly_white",
-            height=800,
-            hovermode="closest",
-        )
-        return figure
-
     def show_all(self) -> dict[str, go.Figure]:
         """Display every diagnostic plot and return the figures by name."""
         figures = {
@@ -305,8 +227,6 @@ class ModelDebugger:
             "distributions": self.plot_distributions(),
             "weight_heatmaps": self.plot_weight_heatmaps(),
         }
-        if self.embedding_labels is not None:
-            figures["embedding_map"] = self.plot_embedding_map()
         for figure in figures.values():
             figure.show()
         return figures
@@ -321,7 +241,5 @@ class ModelDebugger:
             "distributions": self.plot_distributions(),
             "weight_heatmaps": self.plot_weight_heatmaps(),
         }
-        if self.embedding_labels is not None:
-            figures["embedding_map"] = self.plot_embedding_map()
         for name, figure in figures.items():
             figure.write_html(output / f"{name}.html")
