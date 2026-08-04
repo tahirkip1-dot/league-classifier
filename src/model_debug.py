@@ -83,18 +83,6 @@ class ModelDebugger:
         self.train_losses.append(float(train_loss))
         self.validation_losses.append(float(validation_loss))
 
-    def diagnose(self) -> list[str]:
-        """Return warnings for non-finite values and missing gradients."""
-        warnings = []
-        for name, parameter in self.model.named_parameters():
-            if not torch.isfinite(parameter.detach()).all():
-                warnings.append(f"{name}: parameter contains NaN or Inf")
-            if parameter.grad is None:
-                warnings.append(f"{name}: gradient is missing")
-            elif not torch.isfinite(parameter.grad.detach()).all():
-                warnings.append(f"{name}: gradient contains NaN or Inf")
-        return warnings
-
     def plot_losses(
         self,
         train_losses: Iterable[float] | None = None,
