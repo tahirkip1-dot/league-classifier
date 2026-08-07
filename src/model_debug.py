@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Iterable
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -18,6 +17,10 @@ class ModelDebugger:
         self.steps: list[int] = []
         self.parameter_norms: dict[str, list[float]] = defaultdict(list)
         self.gradient_norms: dict[str, list[float]] = defaultdict(list)
+        self.epoch_parameters: dict[int, dict[str, torch.Tensor]] = {}
+        self.epoch_gradients: dict[int, dict[str, torch.Tensor | None]] = {}
+        self.epoch_train_losses: dict[int, float] = {}
+        self.epoch_validation_losses: dict[int, float] = {}
 
     def record_step(self, step: int | None = None) -> None:
         """Record norms, automatically numbering snapshots when no step is supplied."""
@@ -31,24 +34,75 @@ class ModelDebugger:
                 float("nan") if gradient is None else gradient.detach().norm().item()
             )
 
-    def plot_losses(
-        self,
-        train_losses: Iterable[float],
-        validation_losses: Iterable[float],
-    ) -> go.Figure:
-        """Create loss curves from externally managed metric histories."""
-        train_history = [float(loss) for loss in train_losses]
-        validation_history = [float(loss) for loss in validation_losses]
+    def record_epoch(self, epoch: int, train_loss: float, val_loss: float) -> None:
+        """Store losses plus independent parameter and gradient snapshots for an epoch."""
+        epoch = int(epoch)
+        self.epoch_train_losses[epoch] = float(train_loss)
+        self.epoch_validation_losses[epoch] = float(val_loss)
+        self.epoch_parameters[epoch] = {
+            name: parameter.detach().cpu().clone()
+            for name, parameter in self.model.named_parameters()
+        }
+        self.epoch_gradients[epoch] = {
+            name: None if parameter.grad is None else parameter.grad.detach().cpu().clone()
+            for name, parameter in self.model.named_parameters()
+        }
 
-        if not train_history or not validation_history:
-            raise RuntimeError("Train and validation loss histories cannot be empty")
-        if len(train_history) != len(validation_history):
-            raise ValueError(
-                "Train and validation loss histories must contain the same number "
-                "of epochs"
+    def get_parameters(self, epoch: int) -> dict[str, torch.Tensor]:
+        """Return independent copies of the parameter tensors recorded for an epoch."""
+        epoch = int(epoch)
+        if epoch not in self.epoch_parameters:
+            available = sorted(self.epoch_parameters)
+            raise KeyError(
+                f"No parameters recorded for epoch {epoch}. "
+                f"Available epochs: {available}"
+            )
+        return {
+            name: parameter.clone()
+            for name, parameter in self.epoch_parameters[epoch].items()
+        }
+
+    def _parameters_for_epoch(
+        self,
+        epoch: int | None,
+    ) -> list[tuple[str, torch.Tensor]]:
+        if epoch is None:
+            return [
+                (name, parameter.detach().cpu())
+                for name, parameter in self.model.named_parameters()
+            ]
+        return list(self.get_parameters(epoch).items())
+
+    def _gradients_for_epoch(
+        self,
+        epoch: int | None,
+    ) -> dict[str, torch.Tensor | None]:
+        if epoch is None:
+            return {
+                name: None if parameter.grad is None else parameter.grad.detach().cpu()
+                for name, parameter in self.model.named_parameters()
+            }
+        epoch = int(epoch)
+        if epoch not in self.epoch_gradients:
+            available = sorted(self.epoch_gradients)
+            raise KeyError(
+                f"No gradients recorded for epoch {epoch}. "
+                f"Available epochs: {available}"
+            )
+        return self.epoch_gradients[epoch]
+
+    def plot_losses(self) -> go.Figure:
+        """Create loss curves from the epoch history stored by ``record_epoch``."""
+        if not self.epoch_train_losses:
+            raise RuntimeError(
+                "No epoch losses recorded; call record_epoch during training"
             )
 
-        epochs = list(range(len(train_history)))
+        epochs = sorted(self.epoch_train_losses)
+        train_history = [self.epoch_train_losses[epoch] for epoch in epochs]
+        validation_history = [
+            self.epoch_validation_losses[epoch] for epoch in epochs
+        ]
         figure = go.Figure()
         figure.add_trace(go.Scatter(
             x=epochs, y=train_history, mode="lines+markers", name="Train loss"
@@ -100,22 +154,24 @@ class ModelDebugger:
         figure.update_layout(height=750, title="Model and gradient norms", template="plotly_white")
         return figure
 
-    def plot_distributions(self) -> go.Figure:
-        """Create final parameter and gradient histograms for every tensor."""
-        parameters = list(self.model.named_parameters())
+    def plot_distributions(self, epoch: int | None = None) -> go.Figure:
+        """Create parameter and gradient histograms for the current or selected epoch."""
+        parameters = self._parameters_for_epoch(epoch)
+        gradients = self._gradients_for_epoch(epoch)
         titles = [title for name, _ in parameters for title in (name, f"{name} gradient")]
         figure = make_subplots(rows=len(parameters), cols=2, subplot_titles=titles)
 
         for row, (name, parameter) in enumerate(parameters, start=1):
-            values = parameter.detach().cpu().flatten().tolist()
+            values = parameter.flatten().tolist()
             figure.add_trace(
                 go.Histogram(x=values, nbinsx=50, name=name, showlegend=False), row=row, col=1
             )
-            if parameter.grad is not None:
-                gradients = parameter.grad.detach().cpu().flatten().tolist()
+            gradient = gradients[name]
+            if gradient is not None:
+                gradient_values = gradient.flatten().tolist()
                 figure.add_trace(
                     go.Histogram(
-                        x=gradients,
+                        x=gradient_values,
                         nbinsx=50,
                         name=f"{name} gradient",
                         marker_color="orange",
@@ -127,16 +183,20 @@ class ModelDebugger:
 
         figure.update_layout(
             height=max(500, 260 * len(parameters)),
-            title="Final parameter and gradient distributions",
+            title=(
+                "Current parameter and gradient distributions"
+                if epoch is None
+                else f"Parameter and gradient distributions — epoch {epoch}"
+            ),
             template="plotly_white",
         )
         return figure
 
-    def plot_weight_heatmaps(self) -> go.Figure:
-        """Create heatmaps for all two-dimensional parameters."""
+    def plot_weight_heatmaps(self, epoch: int | None = None) -> go.Figure:
+        """Create heatmaps for two-dimensional parameters at the current or selected epoch."""
         matrices = [
-            (name, parameter.detach().cpu().numpy())
-            for name, parameter in self.model.named_parameters()
+            (name, parameter.numpy())
+            for name, parameter in self._parameters_for_epoch(epoch)
             if parameter.ndim == 2
         ]
         if not matrices:
@@ -162,22 +222,25 @@ class ModelDebugger:
             )
         figure.update_layout(
             height=max(500, 340 * len(matrices)),
-            title="Model weight heatmaps",
+            title=(
+                "Current model weight heatmaps"
+                if epoch is None
+                else f"Model weight heatmaps — epoch {epoch}"
+            ),
             template="plotly_white",
         )
         return figure
 
     def show_all(
         self,
-        train_losses: Iterable[float],
-        validation_losses: Iterable[float],
+        epoch: int | None = None,
     ) -> dict[str, go.Figure]:
         """Display every diagnostic plot and return the figures by name."""
         figures = {
-            "losses": self.plot_losses(train_losses, validation_losses),
+            "losses": self.plot_losses(),
             "norms": self.plot_norms(),
-            "distributions": self.plot_distributions(),
-            "weight_heatmaps": self.plot_weight_heatmaps(),
+            "distributions": self.plot_distributions(epoch=epoch),
+            "weight_heatmaps": self.plot_weight_heatmaps(epoch=epoch),
         }
         for figure in figures.values():
             figure.show()
