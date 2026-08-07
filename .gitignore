@@ -1,6 +1,6 @@
 #block private api key
 .env
 .vscode
-.pyc
+*.pyc
 __pycache__/
-.pth
+*.pth
