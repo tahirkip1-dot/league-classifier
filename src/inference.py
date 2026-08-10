@@ -1,12 +1,6 @@
 import torch
 
-from model import LeagueDraftModel, decode, encode
-
-
-if torch.cuda.is_available():
-    device = torch.device('cuda')
-else:
-    device = torch.device('cpu')
+from model import decode, encode
 
 
 def inference(model, names, device, k = 1):
@@ -31,11 +25,3 @@ def inference(model, names, device, k = 1):
         preds = [decode(pred) for pred in preds_enc.squeeze(0).tolist()]
 
     return preds
-
-
-# do some inference
-model = LeagueDraftModel().to(device)
-model.load_state_dict(torch.load('best_model.pth'))
-match1 = ['aatrox', 'sejuani', 'orianna', 'masked', 'lulu', 'ornn', 'monkeyking', 'viktor', 'ashe', 'nautilus']
-guess = inference(model, match1, device, 7)
-print(guess)
