@@ -13,21 +13,16 @@ class ModelDebugger:
     def __init__(self, model: torch.nn.Module):
         self.model = model
         self.epoch_parameters: dict[int, dict[str, torch.Tensor]] = {}
-        self.epoch_gradients: dict[int, dict[str, torch.Tensor | None]] = {}
         self.epoch_train_losses: dict[int, float] = {}
         self.epoch_validation_losses: dict[int, float] = {}
 
     def record_epoch(self, epoch: int, train_loss: float, val_loss: float) -> None:
-        """Store losses plus independent parameter and gradient snapshots for an epoch."""
+        """Store losses plus an independent parameter snapshot for an epoch."""
         epoch = int(epoch)
         self.epoch_train_losses[epoch] = float(train_loss)
         self.epoch_validation_losses[epoch] = float(val_loss)
         self.epoch_parameters[epoch] = {
             name: parameter.detach().cpu().clone()
-            for name, parameter in self.model.named_parameters()
-        }
-        self.epoch_gradients[epoch] = {
-            name: None if parameter.grad is None else parameter.grad.detach().cpu().clone()
             for name, parameter in self.model.named_parameters()
         }
 
@@ -51,24 +46,6 @@ class ModelDebugger:
             (name, parameter.clone())
             for name, parameter in self.epoch_parameters[epoch].items()
         ]
-
-    def _gradients_for_epoch(
-        self,
-        epoch: int | None,
-    ) -> dict[str, torch.Tensor | None]:
-        if epoch is None:
-            return {
-                name: None if parameter.grad is None else parameter.grad.detach().cpu()
-                for name, parameter in self.model.named_parameters()
-            }
-        epoch = int(epoch)
-        if epoch not in self.epoch_gradients:
-            available = sorted(self.epoch_gradients)
-            raise KeyError(
-                f"No gradients recorded for epoch {epoch}. "
-                f"Available epochs: {available}"
-            )
-        return self.epoch_gradients[epoch]
 
     def plot_losses(self) -> go.Figure:
         """Create loss curves from the epoch history stored by ``record_epoch``."""
@@ -102,38 +79,23 @@ class ModelDebugger:
         return figure
 
     def plot_distributions(self, epoch: int | None = None) -> go.Figure:
-        """Create parameter and gradient histograms for the current or selected epoch."""
+        """Create parameter histograms for the current or selected epoch."""
         parameters = self._parameters_for_epoch(epoch)
-        gradients = self._gradients_for_epoch(epoch)
-        titles = [title for name, _ in parameters for title in (name, f"{name} gradient")]
-        figure = make_subplots(rows=len(parameters), cols=2, subplot_titles=titles)
+        titles = [name for name, _ in parameters]
+        figure = make_subplots(rows=len(parameters), cols=1, subplot_titles=titles)
 
         for row, (name, parameter) in enumerate(parameters, start=1):
             values = parameter.flatten().tolist()
             figure.add_trace(
                 go.Histogram(x=values, nbinsx=50, name=name, showlegend=False), row=row, col=1
             )
-            gradient = gradients[name]
-            if gradient is not None:
-                gradient_values = gradient.flatten().tolist()
-                figure.add_trace(
-                    go.Histogram(
-                        x=gradient_values,
-                        nbinsx=50,
-                        name=f"{name} gradient",
-                        marker_color="orange",
-                        showlegend=False,
-                    ),
-                    row=row,
-                    col=2,
-                )
 
         figure.update_layout(
             height=max(500, 260 * len(parameters)),
             title=(
-                "Current parameter and gradient distributions"
+                "Current parameter distributions"
                 if epoch is None
-                else f"Parameter and gradient distributions — epoch {epoch}"
+                else f"Parameter distributions — epoch {epoch}"
             ),
             template="plotly_white",
         )

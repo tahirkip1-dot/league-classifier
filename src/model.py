@@ -1,14 +1,5 @@
 import torch
 import torch.nn as nn
-import json
-
-
-with open('../data/champ_names.json', 'r') as f:
-    champ_names = json.load(f)
-
-# lots of bugs when case is not set to lower due to discrepancies between api and data dragon
-champ_names = [champ.lower() for champ in champ_names]
-champ_names.append('masked')
 
 
 NUM_CHAMPIONS_PER_GAME = 10
@@ -20,24 +11,12 @@ NUM_ATTENTION_HEADS = 4
 
 DROPOUT_RATE = 0.1
 
-#including masked token
-TOTAL_CHAMPIONS = len(champ_names)
-
-
-
-
-str_to_idx = dict(zip(champ_names, range(len(champ_names))))
-
-
-encode = lambda name: str_to_idx[name] # takes a champion name and returns the corresponding index
-decode = lambda idx: champ_names[idx] # takes index and returns the corresponding champion name
-
 
 class LeagueDraftModel(nn.Module):
-    def __init__(self):
+    def __init__(self, total_champions):
         
         super().__init__()
-        self.token_embedding = nn.Embedding(num_embeddings=TOTAL_CHAMPIONS, embedding_dim=EMBEDDING_DIM)
+        self.token_embedding = nn.Embedding(num_embeddings=total_champions, embedding_dim=EMBEDDING_DIM)
         self.role_embedding = nn.Embedding(num_embeddings=NUM_ROLES, embedding_dim=EMBEDDING_DIM)
         self.attention = nn.MultiheadAttention(EMBEDDING_DIM, num_heads=NUM_ATTENTION_HEADS, batch_first=True)
         self.layernorm = nn.LayerNorm(EMBEDDING_DIM)
@@ -45,7 +24,7 @@ class LeagueDraftModel(nn.Module):
         self.lm = nn.Linear(EMBEDDING_DIM * NUM_CHAMPIONS_PER_GAME, HIDDEN_DIM)
 
         # dont include masked token as a possible output
-        self.output_layer = nn.Linear(HIDDEN_DIM, TOTAL_CHAMPIONS - 1)
+        self.output_layer = nn.Linear(HIDDEN_DIM, total_champions - 1)
 
         #store role ids here instead of creating a new tensor every loop
         self.register_buffer(
