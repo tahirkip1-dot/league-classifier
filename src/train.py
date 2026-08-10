@@ -172,9 +172,7 @@ def main():
     best_epoch = 0
     patience = 0
 
-    CHECKPOINT_DIRECTORY.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = CHECKPOINT_DIRECTORY / 'best_model.pth'
-    save_checkpoint(model, checkpoint_path, best_epoch, best_loss, champ_names)
+    save_checkpoint(model, CHECKPOINT_DIRECTORY / 'best_model.pth', best_epoch, best_loss, champ_names)
 
     for epoch in range(1, MAX_EPOCHS + 1):
 
@@ -204,7 +202,7 @@ def main():
         else:
             best_loss = val_loss
             best_epoch = epoch
-            save_checkpoint(model, checkpoint_path, best_epoch, best_loss, champ_names)
+            save_checkpoint(model, CHECKPOINT_DIRECTORY / 'best_model.pth', best_epoch, best_loss, champ_names)
             patience = 0
 
         if patience == MAX_PATIENCE:
