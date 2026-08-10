@@ -6,15 +6,16 @@ import sqlite3
 
 from evaluate import evaluate
 from model import (
-    BATCH_SIZE,
-    LEARNING_RATE,
-    MAX_EPOCHS,
-    MAX_PATIENCE,
     NUM_CHAMPIONS_PER_GAME,
     LeagueDraftModel,
     encode,
 )
 from model_debug import ModelDebugger
+
+BATCH_SIZE = 32
+MAX_EPOCHS = 15
+LEARNING_RATE = 0.0001
+MAX_PATIENCE = 3
 
 
 if torch.cuda.is_available():

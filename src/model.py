@@ -15,16 +15,15 @@ NUM_CHAMPIONS_PER_GAME = 10
 NUM_ROLES = 5
 EMBEDDING_DIM = 128
 HIDDEN_DIM = 256
-MAX_EPOCHS = 15
-LEARNING_RATE = 0.0001
+
 NUM_ATTENTION_HEADS = 4
-MAX_PATIENCE = 3
+
 DROPOUT_RATE = 0.1
 
 #including masked token
 TOTAL_CHAMPIONS = len(champ_names)
 
-BATCH_SIZE = 32
+
 
 
 str_to_idx = dict(zip(champ_names, range(len(champ_names))))
