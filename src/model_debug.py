@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import torch
@@ -100,3 +102,18 @@ class ModelDebugger:
             template="plotly_white",
         )
         return figure
+
+    def save_figures(self, best_epoch: int, directory: str | Path) -> None:
+        """Save training history and best-epoch parameter distributions as HTML."""
+        best_epoch = int(best_epoch)
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+
+        self.plot_losses().write_html(
+            directory / "training_losses.html",
+            auto_open=False,
+        )
+        self.plot_distributions(best_epoch).write_html(
+            directory / f"parameter_distributions_epoch_{best_epoch}.html",
+            auto_open=False,
+        )

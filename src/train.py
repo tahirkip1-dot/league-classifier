@@ -23,6 +23,7 @@ RANDOM_SEED = 42
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIRECTORY = PROJECT_ROOT / 'data'
 CHECKPOINT_DIRECTORY = PROJECT_ROOT / 'artifacts' / 'checkpoints'
+FIGURE_DIRECTORY = PROJECT_ROOT / 'artifacts' / 'figures'
 
 CHAMPION_COLUMNS = [
     'champ_1',
@@ -232,6 +233,9 @@ def main():
             break
 
         print(f"Epoch {epoch} done")
+
+    debugger.save_figures(best_epoch, FIGURE_DIRECTORY)
+    print(f"Saved debugger figures for best epoch {best_epoch} to {FIGURE_DIRECTORY}")
 
 
 if __name__ == '__main__':
