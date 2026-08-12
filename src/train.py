@@ -13,6 +13,7 @@ from model import (
 )
 from model_debug import ModelDebugger
 
+from vocabulary import Vocabulary
 
 BATCH_SIZE = 32
 MAX_EPOCHS = 15
@@ -112,12 +113,11 @@ def train_epoch(model, loader, optimizer, loss_fn, device):
     return running_loss / num_examples
 
 
-def save_checkpoint(model, path, epoch, val_loss, champ_names):
+def save_checkpoint(model, path, champ_names, vocab):
     checkpoint = {
-        'epoch': epoch,
-        'validation_loss': val_loss,
         'model_state_dict': model.state_dict(),
         'champ_names': champ_names,
+        'vocabulary': vocab,
     }
     torch.save(checkpoint, path)
 
@@ -135,22 +135,17 @@ def main():
 
     conn = sqlite3.connect(DATA_DIRECTORY / 'league_data.db')
     df = pd.read_sql_query("SELECT * FROM matches", conn)
+    conn.close()
+
+    vocab = Vocabulary(champ_names)
 
     # lots of bugs when case is not set to lower due to discrepancies between api and data dragon
-    champ_names = [champ.lower() for champ in champ_names]
     df[CHAMPION_COLUMNS] = df[CHAMPION_COLUMNS].apply(lambda x: x.str.lower())
-
-    champ_names.append('masked')
-    conn.close()
 
     champ_data = df.drop(['match_id'], axis=1)
 
-    str_to_idx = dict(zip(champ_names, range(len(champ_names))))
-
-    encode = lambda name: str_to_idx[name] # takes a champion name and returns the corresponding index
-
     encoded_matches = torch.tensor(
-        champ_data.map(encode).to_numpy(),
+        champ_data.map(vocab.encode).to_numpy(),
         dtype=torch.long,
     )
 
@@ -162,8 +157,8 @@ def main():
         generator=split_generator,
     )
 
-    train_data = ChampionDataset(train_matches, encode('masked'))
-    val_data = ChampionDataset(val_matches, encode('masked'))
+    train_data = ChampionDataset(train_matches, vocab.mask_token())
+    val_data = ChampionDataset(val_matches, vocab.mask_token())
 
     loader_generator = torch.Generator().manual_seed(RANDOM_SEED)
     train_load = DataLoader(
@@ -195,7 +190,7 @@ def main():
     best_epoch = 0
     patience = 0
 
-    save_checkpoint(model, CHECKPOINT_DIRECTORY / 'best_model.pth', best_epoch, best_loss, champ_names)
+    save_checkpoint(model, CHECKPOINT_DIRECTORY / 'best_model.pth', champ_names, vocab)
 
     for epoch in range(1, MAX_EPOCHS + 1):
 

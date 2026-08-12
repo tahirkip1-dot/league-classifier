@@ -1,7 +1,7 @@
 class Vocabulary:
 
-    def __init__(self, champ_names: list):
-        self.names = [name.lower() for name in champ_names]
+    def __init__(self, champ_names: list[str]):
+        self.names = [name.lower() for name in champ_names] + ['masked']
 
     def encode(self, name: str):
         name = name.lower()
@@ -9,3 +9,6 @@ class Vocabulary:
 
     def decode(self, id: int):
         return self.names[id]
+
+    def mask_token(self):
+        return self.encode('masked')
