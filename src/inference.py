@@ -1,7 +1,6 @@
 import torch
 
-from model import decode, encode
-
+from vocabulary import Vocabulary
 
 def inference(model, names, device, k = 1):
     '''names must be in the form of a list with champion names and a masked token, in the correct role order of TOP JG MID ADC SUP
