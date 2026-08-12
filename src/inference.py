@@ -2,14 +2,14 @@ import torch
 
 from vocabulary import Vocabulary
 
-def inference(model, names, device, k = 1):
+def inference(model: torch.nn.Module, names: list[str], vocab: Vocabulary, device, k = 1):
     '''names must be in the form of a list with champion names and a masked token, in the correct role order of TOP JG MID ADC SUP
     returns the top k inferences'''
 
     model.eval()
 
     with torch.inference_mode():
-        encode_names = [encode(name) for name in names]
+        encode_names = [vocab.encode(name) for name in names]
 
         # need to add batch dimension
         input = torch.tensor(encode_names, dtype=torch.long).unsqueeze(0)
@@ -21,6 +21,6 @@ def inference(model, names, device, k = 1):
         _, preds_enc = torch.topk(logits, k=k ,dim=1)
 
         # remove the batch dimension first with squeeze
-        preds = [decode(pred) for pred in preds_enc.squeeze(0).tolist()]
+        preds = [vocab.decode(pred) for pred in preds_enc.squeeze(0).tolist()]
 
     return preds
