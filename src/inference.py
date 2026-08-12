@@ -3,7 +3,7 @@ import torch
 from vocabulary import Vocabulary
 
 def inference(model: torch.nn.Module, names: list[str], vocab: Vocabulary, device, k = 1):
-    '''names must be in the form of a list with champion names and a masked token, in the correct role order of TOP JG MID ADC SUP
+    '''names must be in the form of a list with champion names and a masked token, in the correct role order of TOP JG MID ADC SUP.
     returns the top k inferences'''
 
     model.eval()
