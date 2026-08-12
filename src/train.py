@@ -113,11 +113,10 @@ def train_epoch(model, loader, optimizer, loss_fn, device):
     return running_loss / num_examples
 
 
-def save_checkpoint(model, path, champ_names, vocab):
+def save_checkpoint(model, path, champ_names):
     checkpoint = {
         'model_state_dict': model.state_dict(),
         'champ_names': champ_names,
-        'vocabulary': vocab,
     }
     torch.save(checkpoint, path)
 
@@ -157,8 +156,8 @@ def main():
         generator=split_generator,
     )
 
-    train_data = ChampionDataset(train_matches, vocab.mask_token())
-    val_data = ChampionDataset(val_matches, vocab.mask_token())
+    train_data = ChampionDataset(train_matches, vocab.mask_id())
+    val_data = ChampionDataset(val_matches, vocab.mask_id())
 
     loader_generator = torch.Generator().manual_seed(RANDOM_SEED)
     train_load = DataLoader(
@@ -175,7 +174,7 @@ def main():
         pin_memory=(device.type=='cuda'),
     )
 
-    model = LeagueDraftModel(total_champions=len(champ_names)).to(device)
+    model = LeagueDraftModel(total_champions=len(vocab)).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
     loss_fn = nn.CrossEntropyLoss()
 
@@ -190,7 +189,7 @@ def main():
     best_epoch = 0
     patience = 0
 
-    save_checkpoint(model, CHECKPOINT_DIRECTORY / 'best_model.pth', champ_names, vocab)
+    save_checkpoint(model, CHECKPOINT_DIRECTORY / 'best_model.pth', champ_names)
 
     for epoch in range(1, MAX_EPOCHS + 1):
 
@@ -220,7 +219,7 @@ def main():
         else:
             best_loss = val_loss
             best_epoch = epoch
-            save_checkpoint(model, CHECKPOINT_DIRECTORY / 'best_model.pth', best_epoch, best_loss, champ_names)
+            save_checkpoint(model, CHECKPOINT_DIRECTORY / 'best_model.pth', champ_names)
             patience = 0
 
         if patience == MAX_PATIENCE:

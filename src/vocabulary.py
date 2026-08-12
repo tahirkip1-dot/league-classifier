@@ -10,5 +10,8 @@ class Vocabulary:
     def decode(self, id: int):
         return self.names[id]
 
-    def mask_token(self):
+    def mask_id(self):
         return self.encode('masked')
+
+    def __len__(self):
+        return len(self.names)
