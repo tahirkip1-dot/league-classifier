@@ -128,9 +128,10 @@ def train_epoch(model, loader, optimizer, loss_fn, device, mask_id):
     return running_loss / num_examples
 
 
-def save_checkpoint(model, path, champ_names):
+def save_checkpoint(model, path, champ_names, loss):
     checkpoint = {
         'model_state_dict': model.state_dict(),
+        'loss': loss,
         'champ_names': champ_names,
     }
     torch.save(checkpoint, path)
@@ -207,7 +208,7 @@ def main():
     best_epoch = 0
     patience = 0
 
-    save_checkpoint(model, CHECKPOINT_DIRECTORY / 'best_model.pth', champ_names)
+    save_checkpoint(model, CHECKPOINT_DIRECTORY / 'best_model.pth', champ_names, best_loss)
 
     for epoch in range(1, MAX_EPOCHS + 1):
 
@@ -239,7 +240,7 @@ def main():
         else:
             best_loss = val_loss
             best_epoch = epoch
-            save_checkpoint(model, CHECKPOINT_DIRECTORY / 'best_model.pth', champ_names)
+            save_checkpoint(model, CHECKPOINT_DIRECTORY / 'best_model.pth', champ_names, best_loss)
             patience = 0
 
         if patience == MAX_PATIENCE:
