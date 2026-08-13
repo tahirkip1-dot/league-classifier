@@ -1,4 +1,4 @@
-"""Plotly helpers for tracking and visualising PyTorch model parameters."""
+"""Plotly helpers for tracking and visualising PyTorch training diagnostics."""
 
 from __future__ import annotations
 
@@ -15,11 +15,12 @@ class ModelDebugger:
     def __init__(self, model: torch.nn.Module):
         self.model = model
         self.epoch_parameters: dict[int, dict[str, torch.Tensor]] = {}
+        self.epoch_gradients: dict[int, dict[str, torch.Tensor | None]] = {}
         self.epoch_train_losses: dict[int, float] = {}
         self.epoch_validation_losses: dict[int, float] = {}
 
     def record_epoch(self, epoch: int, train_loss: float, val_loss: float) -> None:
-        """Store losses plus an independent parameter snapshot for an epoch."""
+        """Store losses plus independent parameter and gradient snapshots."""
         epoch = int(epoch)
         self.epoch_train_losses[epoch] = float(train_loss)
         self.epoch_validation_losses[epoch] = float(val_loss)
@@ -27,14 +28,28 @@ class ModelDebugger:
             name: parameter.detach().cpu().clone()
             for name, parameter in self.model.named_parameters()
         }
+        self.epoch_gradients[epoch] = {
+            name: (
+                None
+                if parameter.grad is None
+                else parameter.grad.detach().cpu().clone()
+            )
+            for name, parameter in self.model.named_parameters()
+        }
 
-    def _parameters_for_epoch(
+    def _diagnostics_for_epoch(
         self,
         epoch: int | None,
-    ) -> list[tuple[str, torch.Tensor]]:
+    ) -> list[tuple[str, torch.Tensor, torch.Tensor | None]]:
         if epoch is None:
             return [
-                (name, parameter.detach().cpu())
+                (
+                    name,
+                    parameter.detach().cpu(),
+                    None
+                    if parameter.grad is None
+                    else parameter.grad.detach().cpu(),
+                )
                 for name, parameter in self.model.named_parameters()
             ]
         epoch = int(epoch)
@@ -44,8 +59,13 @@ class ModelDebugger:
                 f"No parameters recorded for epoch {epoch}. "
                 f"Available epochs: {available}"
             )
+        gradients = self.epoch_gradients[epoch]
         return [
-            (name, parameter.clone())
+            (
+                name,
+                parameter.clone(),
+                None if gradients[name] is None else gradients[name].clone(),
+            )
             for name, parameter in self.epoch_parameters[epoch].items()
         ]
 
@@ -80,31 +100,67 @@ class ModelDebugger:
         figure.update_xaxes(dtick=1)
         return figure
 
-    def plot_distributions(self, epoch: int | None = None) -> go.Figure:
-        """Create parameter histograms for the current or selected epoch."""
-        parameters = self._parameters_for_epoch(epoch)
-        titles = [name for name, _ in parameters]
-        figure = make_subplots(rows=len(parameters), cols=1, subplot_titles=titles)
+    def plot_parameter_and_gradient_distributions(
+        self,
+        epoch: int | None = None,
+    ) -> go.Figure:
+        """Create side-by-side parameter and gradient histograms."""
+        diagnostics = self._diagnostics_for_epoch(epoch)
+        titles = [
+            title
+            for name, _, _ in diagnostics
+            for title in (f"{name} - parameters", f"{name} - gradients")
+        ]
+        figure = make_subplots(
+            rows=len(diagnostics),
+            cols=2,
+            subplot_titles=titles,
+        )
 
-        for row, (name, parameter) in enumerate(parameters, start=1):
-            values = parameter.flatten().tolist()
+        for row, (name, parameter, gradient) in enumerate(diagnostics, start=1):
             figure.add_trace(
-                go.Histogram(x=values, nbinsx=50, name=name, showlegend=False), row=row, col=1
+                go.Histogram(
+                    x=parameter.flatten().tolist(),
+                    nbinsx=50,
+                    name=f"{name} parameters",
+                    showlegend=False,
+                ),
+                row=row,
+                col=1,
             )
 
+            if gradient is None:
+                figure.add_annotation(
+                    text="No gradient recorded",
+                    showarrow=False,
+                    row=row,
+                    col=2,
+                )
+            else:
+                figure.add_trace(
+                    go.Histogram(
+                        x=gradient.flatten().tolist(),
+                        nbinsx=50,
+                        name=f"{name} gradients",
+                        showlegend=False,
+                    ),
+                    row=row,
+                    col=2,
+                )
+
         figure.update_layout(
-            height=max(500, 260 * len(parameters)),
+            height=max(500, 260 * len(diagnostics)),
             title=(
-                "Current parameter distributions"
+                "Current parameter and gradient distributions"
                 if epoch is None
-                else f"Parameter distributions — epoch {epoch}"
+                else f"Parameter and gradient distributions - epoch {epoch}"
             ),
             template="plotly_white",
         )
         return figure
 
     def save_figures(self, best_epoch: int, directory: str | Path) -> None:
-        """Save training history and best-epoch parameter distributions as HTML."""
+        """Save training history and best-epoch diagnostic distributions."""
         best_epoch = int(best_epoch)
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
@@ -113,7 +169,8 @@ class ModelDebugger:
             directory / "training_losses.html",
             auto_open=False,
         )
-        self.plot_distributions(best_epoch).write_html(
-            directory / f"parameter_distributions_epoch_{best_epoch}.html",
+        self.plot_parameter_and_gradient_distributions(best_epoch).write_html(
+            directory
+            / f"parameter_and_gradient_distributions_epoch_{best_epoch}.html",
             auto_open=False,
         )
