@@ -6,6 +6,5 @@ __pycache__/
 *.pth
 *.pt
 *.py[cod]
-*.html
 *.toml
 *.egg-info
