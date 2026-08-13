@@ -41,9 +41,9 @@ CHAMPION_COLUMNS = [
 
 
 class ChampionDataset(Dataset):
-    def __init__(self, data, masked_encoded):
+    def __init__(self, data, mask_id):
         self.data = data
-        self.masked_id = masked_encoded
+        self.mask_id = mask_id
 
     def __len__(self):
         return len(self.data) * NUM_CHAMPIONS_PER_GAME
@@ -56,12 +56,12 @@ class ChampionDataset(Dataset):
         current_match = self.data[match_id]
         masked_champ = current_match[champ_id]
         masked_match = current_match.clone()
-        masked_match[champ_id] = self.masked_id
+        masked_match[champ_id] = self.mask_id
         
         return masked_match, masked_champ
 
-def evaluate(model, loader, loss_fn, device):
-    '''removes probability from champs already in game'''
+def evaluate(model, loader, loss_fn, device, mask_id):
+
     model.eval()
 
     running_loss = 0.0
@@ -76,6 +76,7 @@ def evaluate(model, loader, loss_fn, device):
             y_v = y_v.to(device, non_blocking=(device.type == 'cuda'))
 
             logits = model(x_v)
+            logits = mask_logits(x_v, logits, mask_id)
             loss = loss_fn(logits, y_v)
 
             running_loss += loss.item() * batch_size
@@ -83,9 +84,22 @@ def evaluate(model, loader, loss_fn, device):
 
     return running_loss / num_examples
 
+def mask_logits(x_b, logits, mask_id):
+    '''removes probabilities from champs already seen in the same game'''
 
-def train_epoch(model, loader, optimizer, loss_fn, device):
-    '''removes probability from champs already in game'''
+    # create a mask which sets to false wherever it sees a masked token
+    mask = (x_b != mask_id)
+
+    # removes the masked tokens and reshapes the tensor into (BATCH_SIZE, NUM_CHAMPIONS_PER_GAME - 1)
+    x_clean = x_b[mask].view(x_b.size(0), x_b.size(1) - 1)
+
+    # sets the logits at the seen champions to -inf for each batch
+    output = torch.scatter(logits, dim=1, index = x_clean, value=float('-inf'))
+    
+    return output
+
+def train_epoch(model, loader, optimizer, loss_fn, device, mask_id):
+
     model.train()
 
     running_loss = 0.0
@@ -101,6 +115,7 @@ def train_epoch(model, loader, optimizer, loss_fn, device):
         optimizer.zero_grad(set_to_none=True)
 
         logits = model(x_b)
+        logits = mask_logits(x_b, logits, mask_id)
         loss = loss_fn(logits, y_b)
 
         loss.backward()
@@ -167,6 +182,7 @@ def main():
         pin_memory=(device.type=='cuda'),
         generator=loader_generator,
     )
+
     val_load = DataLoader(
         val_data,
         batch_size=BATCH_SIZE,
@@ -180,8 +196,8 @@ def main():
 
     debugger = ModelDebugger(model)
 
-    initial_train_loss = evaluate(model, train_load, loss_fn, device)
-    initial_val_loss = evaluate(model, val_load, loss_fn, device)
+    initial_train_loss = evaluate(model, train_load, loss_fn, device, vocab.mask_id())
+    initial_val_loss = evaluate(model, val_load, loss_fn, device, vocab.mask_id())
 
     debugger.record_epoch(0, initial_train_loss, initial_val_loss)
 
@@ -199,7 +215,8 @@ def main():
             train_load,
             optimizer,
             loss_fn,
-            device
+            device,
+            vocab.mask_id()
         )
 
         # calculate validation loss
@@ -207,7 +224,8 @@ def main():
             model,
             val_load,
             loss_fn,
-            device
+            device,
+            vocab.mask_id()
         )
 
         debugger.record_epoch(epoch, train_loss, val_loss)
