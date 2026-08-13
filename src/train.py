@@ -184,6 +184,7 @@ def main():
         shuffle=True,
         pin_memory=(device.type=='cuda'),
         generator=loader_generator,
+        drop_last=True,
     )
 
     val_load = DataLoader(
@@ -197,7 +198,7 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
     loss_fn = nn.CrossEntropyLoss()
 
-    debugger = ModelDebugger(model)
+    debugger = ModelDebugger(model, optimizer)
 
     initial_train_loss = evaluate(model, train_load, loss_fn, device, mask_id)
     initial_val_loss = evaluate(model, val_load, loss_fn, device, mask_id)

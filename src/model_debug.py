@@ -12,46 +12,94 @@ import torch
 class ModelDebugger:
     """Collect training diagnostics and show them as interactive Plotly figures."""
 
-    def __init__(self, model: torch.nn.Module):
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        optimizer: torch.optim.Optimizer,
+    ):
         self.model = model
         self.epoch_parameters: dict[int, dict[str, torch.Tensor]] = {}
-        self.epoch_gradients: dict[int, dict[str, torch.Tensor | None]] = {}
+        self.epoch_log_update_ratios: dict[
+            int,
+            dict[str, torch.Tensor | None],
+        ] = {}
         self.epoch_train_losses: dict[int, float] = {}
         self.epoch_validation_losses: dict[int, float] = {}
+        self._parameters_before_step: dict[str, torch.Tensor] | None = None
+        self._last_parameters_before_step: dict[str, torch.Tensor] | None = None
+        self._optimizer_hook_handles = (
+            optimizer.register_step_pre_hook(self._before_optimizer_step),
+            optimizer.register_step_post_hook(self._after_optimizer_step),
+        )
+
+    def _before_optimizer_step(
+        self,
+        optimizer: torch.optim.Optimizer,
+        args: tuple,
+        kwargs: dict,
+    ) -> None:
+        """Snapshot parameters immediately before an optimizer step."""
+        self._parameters_before_step = {
+            name: parameter.detach().clone()
+            for name, parameter in self.model.named_parameters()
+        }
+
+    def _after_optimizer_step(
+        self,
+        optimizer: torch.optim.Optimizer,
+        args: tuple,
+        kwargs: dict,
+    ) -> None:
+        """Retain the pre-step snapshot for the completed optimizer step."""
+        if self._parameters_before_step is None:
+            raise RuntimeError(
+                "Optimizer post-step hook ran without a pre-step snapshot"
+            )
+
+        self._last_parameters_before_step = self._parameters_before_step
+        self._parameters_before_step = None
 
     def record_epoch(self, epoch: int, train_loss: float, val_loss: float) -> None:
-        """Store losses plus independent parameter and gradient snapshots."""
+        """Store losses, parameters, and the most recent update diagnostics."""
         epoch = int(epoch)
+        named_parameters = list(self.model.named_parameters())
+
         self.epoch_train_losses[epoch] = float(train_loss)
         self.epoch_validation_losses[epoch] = float(val_loss)
-        self.epoch_parameters[epoch] = {
-            name: parameter.detach().cpu().clone()
-            for name, parameter in self.model.named_parameters()
-        }
-        self.epoch_gradients[epoch] = {
-            name: (
-                None
-                if parameter.grad is None
-                else parameter.grad.detach().cpu().clone()
+        self.epoch_parameters[epoch] = {}
+        self.epoch_log_update_ratios[epoch] = {}
+
+        for name, parameter in named_parameters:
+            parameter_snapshot = parameter.detach().cpu().clone()
+            self.epoch_parameters[epoch][name] = parameter_snapshot
+
+            if self._last_parameters_before_step is None:
+                self.epoch_log_update_ratios[epoch][name] = None
+                continue
+
+            parameter_before = self._last_parameters_before_step[name]
+            update = parameter.detach() - parameter_before
+            parameter_rms = parameter_before.square().mean().sqrt()
+            epsilon = torch.finfo(parameter.dtype).eps
+            log_update_ratio = torch.log10(
+                (update.abs() + epsilon) / (parameter_rms + epsilon)
             )
-            for name, parameter in self.model.named_parameters()
-        }
+            self.epoch_log_update_ratios[epoch][name] = (
+                log_update_ratio.detach().cpu().clone()
+            )
+
+        self._last_parameters_before_step = None
+
+    def close(self) -> None:
+        """Remove the optimizer hooks registered by this debugger."""
+        for handle in self._optimizer_hook_handles:
+            handle.remove()
+        self._optimizer_hook_handles = ()
 
     def _diagnostics_for_epoch(
         self,
-        epoch: int | None,
+        epoch: int,
     ) -> list[tuple[str, torch.Tensor, torch.Tensor | None]]:
-        if epoch is None:
-            return [
-                (
-                    name,
-                    parameter.detach().cpu(),
-                    None
-                    if parameter.grad is None
-                    else parameter.grad.detach().cpu(),
-                )
-                for name, parameter in self.model.named_parameters()
-            ]
         epoch = int(epoch)
         if epoch not in self.epoch_parameters:
             available = sorted(self.epoch_parameters)
@@ -59,12 +107,14 @@ class ModelDebugger:
                 f"No parameters recorded for epoch {epoch}. "
                 f"Available epochs: {available}"
             )
-        gradients = self.epoch_gradients[epoch]
+        log_update_ratios = self.epoch_log_update_ratios[epoch]
         return [
             (
                 name,
                 parameter.clone(),
-                None if gradients[name] is None else gradients[name].clone(),
+                None
+                if log_update_ratios[name] is None
+                else log_update_ratios[name].clone(),
             )
             for name, parameter in self.epoch_parameters[epoch].items()
         ]
@@ -108,16 +158,26 @@ class ModelDebugger:
         )
         return figure
 
-    def plot_parameter_and_gradient_distributions(
+    def plot_parameter_and_update_ratio_distributions(
         self,
         epoch: int | None = None,
     ) -> go.Figure:
-        """Create side-by-side parameter and gradient histograms."""
+        """Create side-by-side parameter and log update-ratio histograms."""
+        if epoch is None:
+            if not self.epoch_parameters:
+                raise RuntimeError(
+                    "No epochs recorded; call record_epoch during training"
+                )
+            epoch = max(self.epoch_parameters)
+        epoch = int(epoch)
         diagnostics = self._diagnostics_for_epoch(epoch)
         titles = [
             title
             for name, _, _ in diagnostics
-            for title in (f"{name} - parameters", f"{name} - gradients")
+            for title in (
+                f"{name} - parameters",
+                f"{name} - log(update ratio)",
+            )
         ]
         figure = make_subplots(
             rows=len(diagnostics),
@@ -125,7 +185,10 @@ class ModelDebugger:
             subplot_titles=titles,
         )
 
-        for row, (name, parameter, gradient) in enumerate(diagnostics, start=1):
+        for row, (name, parameter, log_update_ratio) in enumerate(
+            diagnostics,
+            start=1,
+        ):
             figure.add_trace(
                 go.Histogram(
                     x=parameter.flatten().tolist(),
@@ -137,9 +200,9 @@ class ModelDebugger:
                 col=1,
             )
 
-            if gradient is None:
+            if log_update_ratio is None:
                 figure.add_annotation(
-                    text="No gradient recorded",
+                    text="No optimizer update recorded",
                     showarrow=False,
                     row=row,
                     col=2,
@@ -147,9 +210,9 @@ class ModelDebugger:
             else:
                 figure.add_trace(
                     go.Histogram(
-                        x=gradient.flatten().tolist(),
+                        x=log_update_ratio.flatten().tolist(),
                         nbinsx=50,
-                        name=f"{name} gradients",
+                        name=f"{name} log(update ratio)",
                         showlegend=False,
                     ),
                     row=row,
@@ -158,11 +221,7 @@ class ModelDebugger:
 
         figure.update_layout(
             height=max(500, 260 * len(diagnostics)),
-            title=(
-                "Current parameter and gradient distributions"
-                if epoch is None
-                else f"Parameter and gradient distributions - epoch {epoch}"
-            ),
+            title=f"Parameter and log(update ratio) distributions - epoch {epoch}",
             template="plotly_white",
         )
         figure.update_xaxes(
@@ -185,8 +244,8 @@ class ModelDebugger:
             directory / "training_losses.html",
             auto_open=False,
         )
-        self.plot_parameter_and_gradient_distributions(best_epoch).write_html(
+        self.plot_parameter_and_update_ratio_distributions(best_epoch).write_html(
             directory
-            / f"parameter_and_gradient_distributions_epoch_{best_epoch}.html",
+            / f"parameter_and_update_ratio_distributions_epoch_{best_epoch}.html",
             auto_open=False,
         )
