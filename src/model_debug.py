@@ -97,7 +97,15 @@ class ModelDebugger:
             yaxis_title="Loss",
             template="plotly_white",
         )
-        figure.update_xaxes(dtick=1)
+        figure.update_xaxes(
+            dtick=1,
+            exponentformat="power",
+            showexponent="all",
+        )
+        figure.update_yaxes(
+            exponentformat="power",
+            showexponent="all",
+        )
         return figure
 
     def plot_parameter_and_gradient_distributions(
@@ -156,6 +164,14 @@ class ModelDebugger:
                 else f"Parameter and gradient distributions - epoch {epoch}"
             ),
             template="plotly_white",
+        )
+        figure.update_xaxes(
+            exponentformat="power",
+            showexponent="all",
+        )
+        figure.update_yaxes(
+            exponentformat="power",
+            showexponent="all",
         )
         return figure
 
