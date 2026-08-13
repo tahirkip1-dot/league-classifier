@@ -85,7 +85,7 @@ def evaluate(model, loader, loss_fn, device, mask_id):
     return running_loss / num_examples
 
 def mask_logits(x_b, logits, mask_id):
-    '''removes probabilities from champs already seen in the same game'''
+    '''sets logits from champs already seen in the same game to -inf'''
 
     # create a mask which sets to false wherever it sees a masked token
     mask = (x_b != mask_id)
@@ -171,8 +171,10 @@ def main():
         generator=split_generator,
     )
 
-    train_data = ChampionDataset(train_matches, vocab.mask_id())
-    val_data = ChampionDataset(val_matches, vocab.mask_id())
+
+    mask_id = vocab.mask_id()
+    train_data = ChampionDataset(train_matches, mask_id)
+    val_data = ChampionDataset(val_matches, mask_id)
 
     loader_generator = torch.Generator().manual_seed(RANDOM_SEED)
     train_load = DataLoader(
@@ -196,8 +198,8 @@ def main():
 
     debugger = ModelDebugger(model)
 
-    initial_train_loss = evaluate(model, train_load, loss_fn, device, vocab.mask_id())
-    initial_val_loss = evaluate(model, val_load, loss_fn, device, vocab.mask_id())
+    initial_train_loss = evaluate(model, train_load, loss_fn, device, mask_id)
+    initial_val_loss = evaluate(model, val_load, loss_fn, device, mask_id)
 
     debugger.record_epoch(0, initial_train_loss, initial_val_loss)
 
@@ -216,7 +218,7 @@ def main():
             optimizer,
             loss_fn,
             device,
-            vocab.mask_id()
+            mask_id
         )
 
         # calculate validation loss
@@ -225,7 +227,7 @@ def main():
             val_load,
             loss_fn,
             device,
-            vocab.mask_id()
+            mask_id
         )
 
         debugger.record_epoch(epoch, train_loss, val_loss)
