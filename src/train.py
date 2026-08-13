@@ -61,7 +61,7 @@ class ChampionDataset(Dataset):
         return masked_match, masked_champ
 
 def evaluate(model, loader, loss_fn, device):
-
+    '''removes probability from champs already in game'''
     model.eval()
 
     running_loss = 0.0
@@ -85,7 +85,7 @@ def evaluate(model, loader, loss_fn, device):
 
 
 def train_epoch(model, loader, optimizer, loss_fn, device):
-
+    '''removes probability from champs already in game'''
     model.train()
 
     running_loss = 0.0
