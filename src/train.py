@@ -17,7 +17,7 @@ from vocabulary import Vocabulary
 
 BATCH_SIZE = 32
 MAX_EPOCHS = 15
-LEARNING_RATE = 0.0001
+LEARNING_RATE = 0.00003
 MAX_PATIENCE = 3
 RANDOM_SEED = 42
 
@@ -195,7 +195,7 @@ def main():
     )
 
     model = LeagueDraftModel(total_champions=len(vocab)).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)
     loss_fn = nn.CrossEntropyLoss()
 
     debugger = ModelDebugger(model, optimizer)
