@@ -1,6 +1,7 @@
 import torch
 
 from vocabulary import Vocabulary
+from train import mask_logits
 
 def inference(model: torch.nn.Module, names: list[str], vocab: Vocabulary, device, k = 1):
     '''names must be in the form of a list with champion names and a masked token, in the correct role order of TOP JG MID ADC SUP.
@@ -16,6 +17,7 @@ def inference(model: torch.nn.Module, names: list[str], vocab: Vocabulary, devic
 
         input = input.to(device, non_blocking=(device.type == 'cuda'))
         logits = model(input)
+        logits = mask_logits(input, logits)
 
         # returns value indices pairs, only care about index
         _, preds_enc = torch.topk(logits, k=k ,dim=1)
