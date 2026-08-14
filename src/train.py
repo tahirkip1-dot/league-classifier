@@ -19,6 +19,7 @@ BATCH_SIZE = 32
 MAX_EPOCHS = 15
 LEARNING_RATE = 0.00003
 MAX_PATIENCE = 3
+WEIGHT_DECAY = 0.01
 RANDOM_SEED = 42
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -195,7 +196,7 @@ def main():
     )
 
     model = LeagueDraftModel(total_champions=len(vocab)).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     loss_fn = nn.CrossEntropyLoss()
 
     debugger = ModelDebugger(model, optimizer)
