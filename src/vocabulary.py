@@ -1,5 +1,5 @@
 class Vocabulary:
-
+    '''adds the masked champion, dont add manually beforehand'''
     def __init__(self, champ_names: list[str]):
         self.names = [name.lower() for name in champ_names] + ['masked']
 
