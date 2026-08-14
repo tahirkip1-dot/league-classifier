@@ -17,7 +17,7 @@ def inference(model: torch.nn.Module, names: list[str], vocab: Vocabulary, devic
 
         input = input.to(device, non_blocking=(device.type == 'cuda'))
         logits = model(input)
-        logits = mask_logits(input, logits)
+        logits = mask_logits(input, logits, vocab.mask_id())
 
         # returns value indices pairs, only care about index
         _, preds_enc = torch.topk(logits, k=k ,dim=1)
