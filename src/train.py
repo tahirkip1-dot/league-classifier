@@ -18,8 +18,19 @@ from vocabulary import Vocabulary
 BATCH_SIZE = 32
 MAX_EPOCHS = 15
 LEARNING_RATE = 0.00003
-MAX_PATIENCE = 3
+
+# number of epochs without val_loss improvement to stop training
+PATIENCE_EARLY_STOPPING = 3
+
+# number of epochs without meaningful improvement before lowering learning rate
+PATIENCE_SCHEDULER = 0
+
+# minimum percentage decrease in val_loss to consider the change meaningful
+MINIMUM_THRESHOLD = 0.01
+
 WEIGHT_DECAY = 0.01
+LEARNING_RATE_DECAY_FACTOR = 0.5
+
 RANDOM_SEED = 42
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -199,6 +210,7 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     loss_fn = nn.CrossEntropyLoss()
 
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, factor=LEARNING_RATE_DECAY_FACTOR, patience=PATIENCE_SCHEDULER, threshold=MINIMUM_THRESHOLD)
     debugger = ModelDebugger(model, optimizer)
 
     initial_train_loss = evaluate(model, train_load, loss_fn, device, mask_id)
@@ -235,6 +247,9 @@ def main():
 
         debugger.record_epoch(epoch, train_loss, val_loss)
 
+        # multiply learning rate by LEARNING_RATE_DECAY_FACTOR if val_loss doesnt improve by a factor of at least MINIMUM_THRESHOLD
+        scheduler.step(val_loss)
+
         # early stopping
         if val_loss > best_loss:
             patience += 1
@@ -245,7 +260,7 @@ def main():
             save_checkpoint(model, CHECKPOINT_DIRECTORY / 'best_model.pth', champ_names, best_loss)
             patience = 0
 
-        if patience == MAX_PATIENCE:
+        if patience == PATIENCE_EARLY_STOPPING:
             print(f'Max patience reached, early stopping. Best model found at epoch {best_epoch}')
             break
 
