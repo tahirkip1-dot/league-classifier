@@ -31,7 +31,9 @@ MINIMUM_THRESHOLD = 0.01
 WEIGHT_DECAY = 0.01
 LEARNING_RATE_DECAY_FACTOR = 0.5
 
-RANDOM_SEED = 99
+MODEL_SEED = 99
+LOADER_SEED = 99
+SPLIT_SEED = 99
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIRECTORY = PROJECT_ROOT / 'data'
@@ -150,7 +152,7 @@ def save_checkpoint(model, path, champ_names, loss):
 
 
 def main():
-    torch.manual_seed(RANDOM_SEED)
+    torch.manual_seed(MODEL_SEED)
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -175,7 +177,7 @@ def main():
         dtype=torch.long,
     )
 
-    split_generator = torch.Generator().manual_seed(RANDOM_SEED)
+    split_generator = torch.Generator().manual_seed(SPLIT_SEED)
 
     train_matches, val_matches = random_split(
         encoded_matches,
@@ -188,7 +190,7 @@ def main():
     train_data = ChampionDataset(train_matches, mask_id)
     val_data = ChampionDataset(val_matches, mask_id)
 
-    loader_generator = torch.Generator().manual_seed(RANDOM_SEED)
+    loader_generator = torch.Generator().manual_seed(LOADER_SEED)
     train_load = DataLoader(
         train_data,
         batch_size=BATCH_SIZE,
