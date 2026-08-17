@@ -207,7 +207,7 @@ def main():
         pin_memory=(device.type=='cuda'),
     )
 
-    model = LeagueDraftModel(total_champions=len(vocab)).to(device)
+    model = LeagueDraftModel(total_champions=len(vocab), mask_id=mask_id).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     loss_fn = nn.CrossEntropyLoss()
 
