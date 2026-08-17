@@ -152,7 +152,6 @@ def save_checkpoint(model, path, champ_names, loss):
 def main():
     torch.manual_seed(RANDOM_SEED)
     if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(RANDOM_SEED)
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
