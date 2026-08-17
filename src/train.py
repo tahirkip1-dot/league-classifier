@@ -17,7 +17,7 @@ from vocabulary import Vocabulary
 
 BATCH_SIZE = 32
 MAX_EPOCHS = 15
-LEARNING_RATE = 0.00003
+LEARNING_RATE = 0.0001
 
 # number of epochs without val_loss improvement to stop training
 PATIENCE_EARLY_STOPPING = 3
@@ -31,7 +31,7 @@ MINIMUM_THRESHOLD = 0.01
 WEIGHT_DECAY = 0.01
 LEARNING_RATE_DECAY_FACTOR = 0.5
 
-RANDOM_SEED = 42
+RANDOM_SEED = 99
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIRECTORY = PROJECT_ROOT / 'data'
