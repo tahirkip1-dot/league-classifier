@@ -32,11 +32,4 @@ class Vocabulary:
     def __len__(self):
         return len(self.name_id.items())
     
-'''
-    def decode(self, id: int):
-        return self.names[id]
-
-    def mask_id(self):
-        return self.encode('masked')
-'''
     
