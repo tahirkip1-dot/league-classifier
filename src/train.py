@@ -41,16 +41,11 @@ CHECKPOINT_DIRECTORY = PROJECT_ROOT / 'artifacts' / 'checkpoints'
 FIGURE_DIRECTORY = PROJECT_ROOT / 'artifacts' / 'figures'
 
 CHAMPION_COLUMNS = [
-    'champ_1',
-    'champ_2',
-    'champ_3',
-    'champ_4',
-    'champ_5',
-    'champ_6',
-    'champ_7',
-    'champ_8',
-    'champ_9',
-    'champ_10',
+    'top',
+    'jungle',
+    'mid',
+    'bot',
+    'support'
 ]
 
 
@@ -158,8 +153,10 @@ def main():
     else:
         device = torch.device('cpu')
 
-    with open(DATA_DIRECTORY / 'champ_names.json', 'r') as f:
-        champ_names = json.load(f)
+    with open(DATA_DIRECTORY / 'championid_to_name.json') as f:
+        champid_to_names = json.load(f)
+
+    champ_names = list(champid_to_names.values())
 
     conn = sqlite3.connect(DATA_DIRECTORY / 'league_data.db')
     df = pd.read_sql_query("SELECT * FROM matches", conn)
@@ -167,10 +164,13 @@ def main():
 
     vocab = Vocabulary(champ_names)
 
-    # lots of bugs when case is not set to lower due to discrepancies between api and data dragon
-    df[CHAMPION_COLUMNS] = df[CHAMPION_COLUMNS].apply(lambda x: x.str.lower())
+    # convert championid into name
+    df[CHAMPION_COLUMNS] = df[CHAMPION_COLUMNS].map(lambda x: champid_to_names[str(x)])
 
-    champ_data = df.drop(['match_id'], axis=1)
+    # join teams from the same game
+    df_joined = df[df['team_id'] == 100].merge(df[df['team_id'] == 200], how='inner', on='match_id')
+
+    champ_data = df_joined.drop(['match_id', 'team_id_x', 'patch_x', 'team_id_y', 'patch_y'], axis=1)
 
     encoded_matches = torch.tensor(
         champ_data.map(vocab.encode).to_numpy(),
