@@ -40,14 +40,6 @@ DATA_DIRECTORY = PROJECT_ROOT / 'data'
 CHECKPOINT_DIRECTORY = PROJECT_ROOT / 'artifacts' / 'checkpoints'
 FIGURE_DIRECTORY = PROJECT_ROOT / 'artifacts' / 'figures'
 
-CHAMPION_COLUMNS = [
-    'top',
-    'jungle',
-    'mid',
-    'bot',
-    'support'
-]
-
 
 class ChampionDataset(Dataset):
     def __init__(self, data, mask_id):
@@ -62,12 +54,14 @@ class ChampionDataset(Dataset):
         match_id = idx // NUM_CHAMPIONS_PER_GAME
         champ_id = idx % NUM_CHAMPIONS_PER_GAME
 
-        current_match = self.data[match_id]
-        masked_champ = current_match[champ_id]
-        masked_match = current_match.clone()
-        masked_match[champ_id] = self.mask_id
+        current_picks_bans = self.data[match_id]
+        current_picks = current_picks_bans[:NUM_CHAMPIONS_PER_GAME]
+        current_bans = current_picks_bans[NUM_CHAMPIONS_PER_GAME:]
+        masked_champ = current_picks[champ_id]
+        masked_match = current_picks.clone()
+        masked_match[champ_id] = self.masked_id
         
-        return masked_match, masked_champ
+        return masked_match, current_bans, masked_champ
 
 def evaluate(model, loader, loss_fn, device):
 
@@ -171,24 +165,30 @@ def main():
     with open(DATA_DIRECTORY / 'championid_to_name.json') as f:
         champid_to_names = json.load(f)
 
-    champ_names = list(champid_to_names.values())
-
     conn = sqlite3.connect(DATA_DIRECTORY / 'league_data.db')
-    df = pd.read_sql_query("SELECT * FROM matches", conn)
+    picks_id = pd.read_sql_query("SELECT * FROM matches", conn)
+    bans_id = pd.read_sql_query("SELECT * FROM bans", conn)
     conn.close()
 
-    vocab = Vocabulary(champ_names)
+    # convert str to ints
+    champid_to_names = {int(item[0]):item[1] for item in champid_to_names.items()}
 
-    # convert championid into name
-    df[CHAMPION_COLUMNS] = df[CHAMPION_COLUMNS].map(lambda x: champid_to_names[str(x)])
+    vocab = Vocabulary(champid_to_names)
+
+    # join each teams picks and bans
+    picks_bans_id = picks_id.merge(bans_id, how='inner', on=['match_id', 'team_id'])
 
     # join teams from the same game
-    df_joined = df[df['team_id'] == 100].merge(df[df['team_id'] == 200], how='inner', on='match_id')
+    complete_id = picks_bans_id[picks_bans_id['team_id'] == 100].merge(picks_bans_id[picks_bans_id['team_id'] == 200], how='inner', on='match_id')
 
-    champ_data = df_joined.drop(['match_id', 'team_id_x', 'patch_x', 'team_id_y', 'patch_y'], axis=1)
+    champ_data_id = complete_id.drop(['match_id', 'team_id_x', 'patch_x', 'team_id_y', 'patch_y'], axis=1)
+
+    # reorder into 10 picks then 10 bans
+    champ_data_id = champ_data_id[['top_x', 'jungle_x', 'mid_x', 'bot_x', 'support_x', 'top_y', 'jungle_y', 'mid_y', 'bot_y', 'support_y', 'ban_1_x', 'ban_2_x', 'ban_3_x', 'ban_4_x', 'ban_5_x', 'ban_1_y', 'ban_2_y', 'ban_3_y', 'ban_4_y', 'ban_5_y']]
+
 
     encoded_matches = torch.tensor(
-        champ_data.map(vocab.encode).to_numpy(),
+        champ_data_id.map(vocab.riot_id_to_id).to_numpy(),
         dtype=torch.long,
     )
 

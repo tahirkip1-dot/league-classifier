@@ -22,8 +22,8 @@ class LeagueDraftModel(nn.Module):
         self.dropout = nn.Dropout(DROPOUT_RATE)
         self.lm = nn.Linear(EMBEDDING_DIM * NUM_CHAMPIONS_PER_GAME, HIDDEN_DIM)
 
-        # dont include masked token as a possible output
-        self.output_layer = nn.Linear(HIDDEN_DIM, total_champions - 1)
+        # dont include masked token and no_ban as a possible output
+        self.output_layer = nn.Linear(HIDDEN_DIM, total_champions - 2)
 
         # store role ids here instead of creating a new tensor every loop. ally team is always 01234 in order of TOP JG MID ADC SUP.
         self.register_buffer(
