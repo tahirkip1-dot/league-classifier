@@ -73,5 +73,5 @@ class LeagueDraftModel(nn.Module):
         # dropout
         pre_activations = self.dropout(pre_activations)
 
-        logits = self.output_layer(pre_activations) # Shape: (BATCH_SIZE, TOTAL_CHAMPIONS - 1)
+        logits = self.output_layer(pre_activations) # Shape: (BATCH_SIZE, TOTAL_CHAMPIONS - 2)
         return logits
