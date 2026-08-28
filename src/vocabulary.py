@@ -3,7 +3,7 @@ class Vocabulary:
     def __init__(self, riot_id_to_name: dict[int, str]):
 
         # riot id to name dictionary
-        riot_id_name = riot_id_to_name
+        riot_id_name = riot_id_to_name.copy()
         riot_id_name[-1] = 'no_ban'
         self.riot_id_name = riot_id_name
 
