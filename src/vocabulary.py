@@ -14,6 +14,9 @@ class Vocabulary:
         mask_id = self.name_id['masked']
         self.mask_id = mask_id
 
+        no_ban_id = self.name_id['no_ban']
+        self.no_ban_id = no_ban_id
+
         # model integer to name dictionary
         self.id_name = {value:key for key, value in self.name_id.items()}
 

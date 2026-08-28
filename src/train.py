@@ -69,7 +69,7 @@ class ChampionDataset(Dataset):
         
         return masked_match, masked_champ
 
-def evaluate(model, loader, loss_fn, device, mask_id):
+def evaluate(model, loader, loss_fn, device):
 
     model.eval()
 
@@ -77,15 +77,16 @@ def evaluate(model, loader, loss_fn, device, mask_id):
     num_examples = 0
 
     with torch.inference_mode():
-        for x_v, y_v in loader:
+        for x_v, ban_v, y_v in loader:
 
             batch_size = y_v.size(0)
             
             x_v = x_v.to(device, non_blocking=(device.type == 'cuda'))
+            ban_v = ban_v.to(device, non_blocking=(device.type == 'cuda'))
             y_v = y_v.to(device, non_blocking=(device.type == 'cuda'))
 
             logits = model(x_v)
-            logits = mask_logits(x_v, logits, mask_id)
+            logits = mask_logits(x_v, ban_v, logits)
             loss = loss_fn(logits, y_v)
 
             running_loss += loss.item() * batch_size
@@ -93,38 +94,52 @@ def evaluate(model, loader, loss_fn, device, mask_id):
 
     return running_loss / num_examples
 
-def mask_logits(x_b, logits, mask_id):
+def mask_logits(x_b, bans, logits):
     '''sets logits from champs already seen in the same game to -inf'''
 
-    # create a mask which sets to false wherever it sees a masked token
-    mask = (x_b != mask_id)
+    # shape (173)
+    class_ids = torch.arange(
+        logits.size(1),
+        device=logits.device
+    )
 
-    # removes the masked tokens and reshapes the tensor into (BATCH_SIZE, NUM_CHAMPIONS_PER_GAME - 1)
-    x_clean = x_b[mask].view(x_b.size(0), x_b.size(1) - 1)
+    # shape (1, 1, 173)
+    class_ids = class_ids.view(1, 1, -1)
 
-    # sets the logits at the seen champions to -inf for each batch
-    output = torch.scatter(logits, dim=1, index = x_clean, value=float('-inf'))
+    # shape: (B, 10, 1) -> (B, 10, 1) == (1, 1, 173) -> (B, 10, 173) -> any(1) -> (B, 173)
+    # for each picked champion, there will be 173 elements with all false and a single True for the champion that was picked there. any(1) then combines all these trues in the 
+    # the 2nd dimension which is the 'match' dimension so there will be up to 9 Trues (masked token is always false) out of 173 corresponding to all champions picked that game. 
+    seen = (x_b.unsqueeze(-1) == class_ids).any(1)
+
+    # similarly for banned
+    banned = (bans.unsqueeze(-1) == class_ids).any(1)
+
+    # shape(B, 173)
+    blocked = seen | banned
+
+    output = logits.masked_fill(blocked, float('-inf'))
     
     return output
 
-def train_epoch(model, loader, optimizer, loss_fn, device, mask_id):
+def train_epoch(model, loader, optimizer, loss_fn, device):
 
     model.train()
 
     running_loss = 0.0
     num_examples = 0
-    for x_b, y_b in loader:
+    for x_b, ban_b, y_b in loader:
 
         batch_size = y_b.size(0)
 
         # move batches into gpu
         x_b = x_b.to(device, non_blocking=(device.type == 'cuda'))
+        ban_b = ban_b.to(device, non_blocking=(device.type == 'cuda'))
         y_b = y_b.to(device, non_blocking=(device.type == 'cuda'))
 
         optimizer.zero_grad(set_to_none=True)
 
         logits = model(x_b)
-        logits = mask_logits(x_b, logits, mask_id)
+        logits = mask_logits(x_b, ban_b, logits)
         loss = loss_fn(logits, y_b)
 
         loss.backward()
@@ -186,7 +201,7 @@ def main():
     )
 
 
-    mask_id = vocab.mask_id()
+    mask_id = vocab.mask_id
     train_data = ChampionDataset(train_matches, mask_id)
     val_data = ChampionDataset(val_matches, mask_id)
 
@@ -214,8 +229,8 @@ def main():
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, factor=LEARNING_RATE_DECAY_FACTOR, patience=PATIENCE_SCHEDULER, threshold=MINIMUM_THRESHOLD)
     debugger = ModelDebugger(model, optimizer)
 
-    initial_train_loss = evaluate(model, train_load, loss_fn, device, mask_id)
-    initial_val_loss = evaluate(model, val_load, loss_fn, device, mask_id)
+    initial_train_loss = evaluate(model, train_load, loss_fn, device)
+    initial_val_loss = evaluate(model, val_load, loss_fn, device)
 
     debugger.record_epoch(0, initial_train_loss, initial_val_loss)
 
@@ -234,7 +249,6 @@ def main():
             optimizer,
             loss_fn,
             device,
-            mask_id
         )
 
         # calculate validation loss
@@ -243,7 +257,6 @@ def main():
             val_load,
             loss_fn,
             device,
-            mask_id
         )
 
         debugger.record_epoch(epoch, train_loss, val_loss)
