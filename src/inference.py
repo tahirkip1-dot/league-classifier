@@ -11,7 +11,7 @@ def inference(model: torch.nn.Module, names: list[str], bans: list[str], vocab: 
 
     with torch.inference_mode():
         encode_names = [vocab.name_to_id(name) for name in names]
-        encode_bans = [[vocab.name_to_id(ban) for ban in bans]]
+        encode_bans = [vocab.name_to_id(ban) for ban in bans]
 
         # need to add batch dimension
         input = torch.tensor(encode_names, dtype=torch.long).unsqueeze(0)
