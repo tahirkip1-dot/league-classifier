@@ -59,7 +59,7 @@ class ChampionDataset(Dataset):
         current_bans = current_picks_bans[NUM_CHAMPIONS_PER_GAME:]
         masked_champ = current_picks[champ_id]
         masked_match = current_picks.clone()
-        masked_match[champ_id] = self.masked_id
+        masked_match[champ_id] = self.mask_id
         
         return masked_match, current_bans, masked_champ
 
