@@ -5,7 +5,8 @@ import torch.nn as nn
 NUM_CHAMPIONS_PER_GAME = 10
 EMBEDDING_DIM = 128
 HIDDEN_DIM = 256
-
+LINEAR_LAYER_DIM = 64
+NUM_ATTENTION_BLOCKS = 4
 NUM_ATTENTION_HEADS = 4
 
 DROPOUT_RATE = 0.1
@@ -15,12 +16,25 @@ class LeagueDraftModel(nn.Module):
     def __init__(self, total_champions, mask_id):
         
         super().__init__()
+        attention_block = nn.TransformerEncoderLayer(
+            d_model=EMBEDDING_DIM,
+            nhead=NUM_ATTENTION_HEADS,
+            dim_feedforward=LINEAR_LAYER_DIM,
+            dropout=DROPOUT_RATE,
+            activation='gelu',
+            batch_first=True,
+        )
+        
+        self.attention_blocks = nn.TransformerEncoder(
+            encoder_layer=attention_block,
+            num_layers=NUM_ATTENTION_BLOCKS,
+        )
+        
         self.token_embedding = nn.Embedding(num_embeddings=total_champions, embedding_dim=EMBEDDING_DIM)
         self.role_embedding = nn.Embedding(num_embeddings=NUM_CHAMPIONS_PER_GAME, embedding_dim=EMBEDDING_DIM)
-        self.attention = nn.MultiheadAttention(EMBEDDING_DIM, num_heads=NUM_ATTENTION_HEADS, batch_first=True)
-        self.layernorm = nn.LayerNorm(EMBEDDING_DIM)
+        self.hidden = nn.Linear(EMBEDDING_DIM, HIDDEN_DIM)
         self.dropout = nn.Dropout(DROPOUT_RATE)
-        self.lm = nn.Linear(EMBEDDING_DIM * NUM_CHAMPIONS_PER_GAME, HIDDEN_DIM)
+        self.activation = nn.GELU()
 
         # dont include masked token and no_ban as a possible output
         self.output_layer = nn.Linear(HIDDEN_DIM, total_champions - 2)
@@ -44,7 +58,7 @@ class LeagueDraftModel(nn.Module):
         batch_size = x.size(0)
         token_embeds = self.token_embedding(x) # Shape: (BATCH_SIZE, NUM_CHAMPIONS_PER_GAME, EMBEDDING_DIM)
         
-        # finds where the mask_token is in each batch. unsqueeze is required to broadcast in the next step
+        # finds the index where the mask_token is in each batch. unsqueeze is required to broadcast in the next step
         where_mask = (x==self.mask_id).nonzero(as_tuple=True)[1].unsqueeze(1) # Shape: (BATCH_SIZE, 1)
         
         # determines where the mask is and duplicates the desired role_ids. torch.where broadcasts to the 2nd dimension
@@ -52,26 +66,14 @@ class LeagueDraftModel(nn.Module):
         
         role_embeds = self.role_embedding(role_ids) # Shape: (BATCH_SIZE, NUM_CHAMPIONS_PER_GAME, EMBEDDING_DIM)
         embeds = token_embeds + role_embeds # Shape: (BATCH_SIZE, NUM_CHAMPIONS_PER_GAME, EMBEDDING_DIM)
-
-        # attention
-        attended, _ = self.attention(query=embeds, key=embeds, value=embeds, need_weights=False) # Shape: (BATCH_SIZE, NUM_CHAMPIONS_PER_GAME, EMBEDDING_DIM)
-
-        # dropout
-        attended = self.dropout(attended)
-
-        # residual
-        attended = attended + embeds
-
-        # layer norm
-        attended = self.layernorm(attended) # Shape: (BATCH_SIZE, NUM_CHAMPIONS_PER_GAME, EMBEDDING_DIM)
-
-        # flatten
-        attended = attended.reshape(batch_size, NUM_CHAMPIONS_PER_GAME * EMBEDDING_DIM) # Shape: (BATCH_SIZE, NUM_CHAMPIONS_PER_GAME * EMBEDDING_DIM)
-
-        pre_activations = torch.tanh(self.lm(attended))  # Shape: (BATCH_SIZE, HIDDEN_DIM)
-
-        # dropout
-        pre_activations = self.dropout(pre_activations)
-
-        logits = self.output_layer(pre_activations) # Shape: (BATCH_SIZE, TOTAL_CHAMPIONS - 2)
+        
+        # attention blocks
+        attended = self.attention_blocks(embeds) # Shape:(BATCH_SIZE, NUM_CHAMPIONS_PER_GAME, EMBEDDING_DIM)
+                
+        # extract only the information for the mask_id position
+        masked_output = attended[x==self.mask_id]
+        
+        hidden = self.dropout(self.activation(self.hidden(masked_output)))  # Shape: (BATCH_SIZE, HIDDEN_DIM)
+        
+        logits = self.output_layer(hidden) # Shape: (BATCH_SIZE, TOTAL_CHAMPIONS - 2)
         return logits
