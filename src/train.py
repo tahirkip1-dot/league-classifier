@@ -3,15 +3,15 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import DataLoader, random_split
 
 from model import (
-    NUM_CHAMPIONS_PER_GAME,
     LeagueDraftModel,
     NUM_ATTENTION_BLOCKS,
 )
+
 from model_debug import ModelDebugger
-from data import load_matches
+from data import load_matches, ChampionDataset
 from vocabulary import Vocabulary
 
 BATCH_SIZE = 32
@@ -43,28 +43,6 @@ DATA_DIRECTORY = PROJECT_ROOT / 'data'
 CHECKPOINT_DIRECTORY = PROJECT_ROOT / 'artifacts' / 'checkpoints'
 FIGURE_DIRECTORY = PROJECT_ROOT / 'artifacts' / 'figures'
 
-
-class ChampionDataset(Dataset):
-    def __init__(self, data, mask_id):
-        self.data = data
-        self.mask_id = mask_id
-
-    def __len__(self):
-        return len(self.data) * NUM_CHAMPIONS_PER_GAME
-    
-    def __getitem__(self, idx):
-
-        match_id = idx // NUM_CHAMPIONS_PER_GAME
-        champ_id = idx % NUM_CHAMPIONS_PER_GAME
-
-        current_picks_bans = self.data[match_id]
-        current_picks = current_picks_bans[:NUM_CHAMPIONS_PER_GAME]
-        current_bans = current_picks_bans[NUM_CHAMPIONS_PER_GAME:]
-        masked_champ = current_picks[champ_id]
-        masked_match = current_picks.clone()
-        masked_match[champ_id] = self.mask_id
-        
-        return masked_match, current_bans, masked_champ
 
 def evaluate(model, loader, loss_fn, device):
 
@@ -183,7 +161,6 @@ def main():
         [0.9, 0.1],
         generator=split_generator,
     )
-
 
     mask_id = vocab.mask_id
     train_data = ChampionDataset(train_matches, mask_id)
