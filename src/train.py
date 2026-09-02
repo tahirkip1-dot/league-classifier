@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
-import sqlite3
 
-import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split
@@ -172,7 +170,7 @@ def main():
 
     
     # convert str to ints
-    champid_to_names = {int(item[0]):item[1] for item in champid_to_names.items()}
+    champid_to_names = {int(key):value for key, value in champid_to_names.items()}
 
     vocab = Vocabulary(champid_to_names)
 
