@@ -1,7 +1,7 @@
 import torch
 
 from vocabulary import Vocabulary
-from train import mask_logits
+from draft_constraints import mask_logits
 
 def inference(model: torch.nn.Module, names: list[str], vocab: Vocabulary, device, bans: list[str] = 10 * ['no_ban'], k = 1):
     '''names must be in the form of a list with champion names and a masked token, in the correct role order of TOP JG MID ADC SUP.
