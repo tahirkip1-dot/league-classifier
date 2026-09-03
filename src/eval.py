@@ -30,3 +30,24 @@ def inference(model: torch.nn.Module, names: list[str], vocab: Vocabulary, devic
         preds = [vocab.id_to_name(pred) for pred in preds_enc.squeeze(0).tolist()]
 
     return preds
+
+
+def top_k_accuracy(loader, model, device, k):
+    '''calculate top-k accuracy of model over loader data'''
+    count = 0
+    for picks, bans, target in loader: 
+        with torch.inference_mode():
+    
+            picks = picks.to(device, non_blocking=(device.type == 'cuda'))
+            bans = bans.to(device, non_blocking=(device.type == 'cuda'))
+            target = target.to(device, non_blocking=(device.type == 'cuda'))
+
+            logits = model(picks)
+            logits = mask_logits(picks, bans, logits)
+    
+            # returns value indices pairs, only care about index
+            _, preds = torch.topk(logits, k=k, dim=1)
+    
+            count += torch.sum(torch.sum(preds == target.unsqueeze(1), dim=1))
+
+    return count.item() / len(loader.dataset)
