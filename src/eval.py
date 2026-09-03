@@ -35,6 +35,7 @@ def inference(model: torch.nn.Module, names: list[str], vocab: Vocabulary, devic
 def top_k_accuracy(loader, model, device, k):
     '''calculate top-k accuracy of model over loader data'''
     count = 0
+    model.eval()
     for picks, bans, target in loader: 
         with torch.inference_mode():
     
