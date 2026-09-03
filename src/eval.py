@@ -36,8 +36,8 @@ def top_k_accuracy(loader, model, device, k):
     '''calculate top-k accuracy of model over loader data'''
     count = 0
     model.eval()
-    for picks, bans, target in loader: 
-        with torch.inference_mode():
+    with torch.inference_mode(): 
+        for picks, bans, target in loader:
     
             picks = picks.to(device, non_blocking=(device.type == 'cuda'))
             bans = bans.to(device, non_blocking=(device.type == 'cuda'))
