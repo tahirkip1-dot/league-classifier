@@ -52,3 +52,23 @@ def top_k_accuracy(loader, model, device, k):
             count += torch.sum(torch.sum(preds == target.unsqueeze(1), dim=1))
 
     return count.item() / len(loader.dataset)
+
+def MRR(loader, model, device):
+    '''mean reciprocal rank'''
+    model.eval()
+    with torch.inference_mode(): 
+        for picks, bans, target in loader:
+        
+            picks = picks.to(device, non_blocking=(device.type == 'cuda'))
+            bans = bans.to(device, non_blocking=(device.type == 'cuda'))
+            target = target.to(device, non_blocking=(device.type == 'cuda'))
+    
+            logits = model(picks)
+            logits = mask_logits(picks, bans, logits)
+
+            preds = torch.argsort(logits, dim=1, descending=True)
+
+            mrr = (1/(torch.nonzero(preds == target.unsqueeze(1), as_tuple=True)[1] + 1)).mean().item()
+    
+    return mrr
+    
