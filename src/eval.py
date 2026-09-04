@@ -56,6 +56,7 @@ def top_k_accuracy(loader, model, device, k):
 def MRR(loader, model, device):
     '''mean reciprocal rank'''
     model.eval()
+    srr = 0
     with torch.inference_mode(): 
         for picks, bans, target in loader:
         
@@ -68,7 +69,7 @@ def MRR(loader, model, device):
 
             preds = torch.argsort(logits, dim=1, descending=True)
 
-            mrr = (1/(torch.nonzero(preds == target.unsqueeze(1), as_tuple=True)[1] + 1)).mean().item()
+            srr += (1/(torch.nonzero(preds == target.unsqueeze(1), as_tuple=True)[1] + 1)).sum().item()
     
-    return mrr
+    return srr / len(loader.dataset)
     
